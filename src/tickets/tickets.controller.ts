@@ -1,4 +1,5 @@
 import { Body, ConflictException, Controller, Get, Post } from '@nestjs/common';
+import { Op } from 'sequelize';
 import { Company } from '../../db/models/Company';
 import {
   Ticket,
@@ -33,10 +34,7 @@ export class TicketsController {
   async create(@Body() newTicketDto: newTicketDto) {
     const { type, companyId } = newTicketDto;
 
-    const category =
-      type === TicketType.managementReport
-        ? TicketCategory.accounting
-        : TicketCategory.corporate;
+    const category = this.getTicketCategory(type);
 
     const userRole =
       type === TicketType.managementReport
@@ -86,6 +84,18 @@ export class TicketsController {
 
         assignee = corporateSecretaries[0];
       }
+    } else if (type === TicketType.strikeOff) {
+      const directors = await User.findAll({
+        where: { companyId, role: UserRole.director },
+      });
+
+      if (directors.length > 1) {
+        throw new ConflictException(
+          `Cannot create a strike off ticket for company ${companyId} because there are multiple directors`,
+        );
+      }
+
+      assignee = directors[0];
     } else {
       const assignees = await User.findAll({
         where: { companyId, role: userRole },
@@ -113,6 +123,17 @@ export class TicketsController {
       status: TicketStatus.open,
     });
 
+    if (ticket.type === TicketType.strikeOff) {
+      await Ticket.update(
+        { status: TicketStatus.resolved },
+        {
+          where: {
+            id: { [Op.ne]: ticket.id },
+          },
+        },
+      );
+    }
+
     const ticketDto: TicketDto = {
       id: ticket.id,
       type: ticket.type,
@@ -123,5 +144,18 @@ export class TicketsController {
     };
 
     return ticketDto;
+  }
+
+  getTicketCategory(type: TicketType): TicketCategory {
+    switch (type) {
+      case TicketType.managementReport:
+        return TicketCategory.accounting;
+      case TicketType.registrationAddressChange:
+        return TicketCategory.corporate;
+      case TicketType.strikeOff:
+        return TicketCategory.management;
+      default:
+        throw new Error('Invalid ticket type');
+    }
   }
 }
