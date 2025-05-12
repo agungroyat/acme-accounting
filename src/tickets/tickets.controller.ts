@@ -60,6 +60,23 @@ export class TicketsController {
 
     const assignee = assignees[0];
 
+    if (type === TicketType.registrationAddressChange) {
+      const registrationAddressChangeTicket = await Ticket.findOne({
+        where: {
+          companyId,
+          type: TicketType.registrationAddressChange,
+          status: TicketStatus.open,
+        },
+        order: [['createdAt', 'DESC']],
+      });
+
+      if (registrationAddressChangeTicket) {
+        throw new ConflictException(
+          `Cannot create a ticket for company ${companyId} because there is already an open ticket for registration address change`,
+        );
+      }
+    }
+
     const ticket = await Ticket.create({
       companyId,
       assigneeId: assignee.id,
