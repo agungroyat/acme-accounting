@@ -43,12 +43,12 @@ Every ticket has
 **Ticket Creation Rules**
 
 If a ticket type is `managementReport`, then the ticket category 
-should be `accounting`. The assignee is a user with the role = `Accountant`. 
+should be `accounting`. The assignee is a user with the role = `accountant`. 
 If there are multiple accountants in the company, 
 take the most recently created one.
 
 If a ticket type is `registrationAddressChange`, then the ticket category 
-should be `Corporate`. Assignee is a user with the role `Corporate secretary`. 
+should be `corporate`. Assignee is a user with the role `corporateSecretary`. 
 If there are multiple secretaries, throw an error.
 
 If we cannot find an assignee with the required role, throw an error.
