@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { promises as fs } from 'fs';
+import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
 
@@ -21,26 +21,48 @@ export class ReportsService {
     const tmpDir = 'tmp';
     const outputFile = 'out/accounts.csv';
     const accountBalances: Record<string, number> = {};
-    const files = await fs.readdir(tmpDir);
-    for (const file of files) {
-      if (file.endsWith('.csv')) {
-        const content = await fs.readFile(path.join(tmpDir, file), 'utf-8');
-        const lines = content.trim().split('\n');
-        for (const line of lines) {
-          const [, account, , debit, credit] = line.split(',');
-          if (!accountBalances[account]) {
-            accountBalances[account] = 0;
-          }
-          accountBalances[account] +=
-            parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
-        }
-      }
+
+    const files = await fs.promises.readdir(tmpDir).catch((err) => {
+      console.error('Error reading directory:', err);
+    });
+
+    if (!files) {
+      console.error('No files found in the directory');
+      return;
     }
+
+    await Promise.all(
+      files.map(async (file) => {
+        if (file.endsWith('.csv')) {
+          const lines = await fs.promises
+            .readFile(path.join(tmpDir, file), 'utf-8')
+            .then((data) => data.trim().split('\n'))
+            .catch((err) => {
+              console.error('Error reading file:', err);
+            });
+
+          if (!lines) {
+            console.error('No lines found in the file');
+            return;
+          }
+
+          for (const line of lines) {
+            const [, account, , debit, credit] = line.split(',');
+            if (!accountBalances[account]) {
+              accountBalances[account] = 0;
+            }
+            accountBalances[account] +=
+              parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
+          }
+        }
+      }),
+    );
+
     const output = ['Account,Balance'];
     for (const [account, balance] of Object.entries(accountBalances)) {
       output.push(`${account},${balance.toFixed(2)}`);
     }
-    await fs.writeFile(outputFile, output.join('\n'));
+    fs.writeFileSync(outputFile, output.join('\n'));
     this.states.accounts = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 
@@ -50,31 +72,54 @@ export class ReportsService {
     const tmpDir = 'tmp';
     const outputFile = 'out/yearly.csv';
     const cashByYear: Record<string, number> = {};
-    const files = await fs.readdir(tmpDir);
-    for (const file of files) {
-      if (file.endsWith('.csv') && file !== 'yearly.csv') {
-        const content = await fs.readFile(path.join(tmpDir, file), 'utf-8');
-        const lines = content.trim().split('\n');
-        for (const line of lines) {
-          const [date, account, , debit, credit] = line.split(',');
-          if (account === 'Cash') {
-            const year = new Date(date).getFullYear();
-            if (!cashByYear[year]) {
-              cashByYear[year] = 0;
+
+    const files = await fs.promises.readdir(tmpDir).catch((err) => {
+      console.error('Error reading directory:', err);
+    });
+
+    if (!files) {
+      console.error('No files found in the directory');
+      return;
+    }
+
+    await Promise.all(
+      files.map(async (file) => {
+        if (file.endsWith('.csv') && file !== 'yearly.csv') {
+          const lines = await fs.promises
+            .readFile(path.join(tmpDir, file), 'utf-8')
+            .then((data) => data.trim().split('\n'))
+            .catch((err) => {
+              console.error('Error reading file:', err);
+            });
+
+          if (!lines) {
+            console.error('No lines found in the file');
+            return;
+          }
+
+          for (const line of lines) {
+            const [date, account, , debit, credit] = line.split(',');
+            if (account === 'Cash') {
+              const year = new Date(date).getFullYear();
+              if (!cashByYear[year]) {
+                cashByYear[year] = 0;
+              }
+              cashByYear[year] +=
+                parseFloat(String(debit || 0)) -
+                parseFloat(String(credit || 0));
             }
-            cashByYear[year] +=
-              parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
           }
         }
-      }
-    }
+      }),
+    );
+
     const output = ['Financial Year,Cash Balance'];
     Object.keys(cashByYear)
       .sort()
       .forEach((year) => {
         output.push(`${year},${cashByYear[year].toFixed(2)}`);
       });
-    await fs.writeFile(outputFile, output.join('\n'));
+    fs.writeFileSync(outputFile, output.join('\n'));
     this.states.yearly = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 
@@ -122,21 +167,43 @@ export class ReportsService {
         }
       }
     }
-    const files = await fs.readdir(tmpDir);
-    for (const file of files) {
-      if (file.endsWith('.csv') && file !== 'fs.csv') {
-        const content = await fs.readFile(path.join(tmpDir, file), 'utf-8');
-        const lines = content.trim().split('\n');
-        for (const line of lines) {
-          const [, account, , debit, credit] = line.split(',');
 
-          if (balances.hasOwnProperty(account)) {
-            balances[account] +=
-              parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
+    const files = await fs.promises.readdir(tmpDir).catch((err) => {
+      console.error('Error reading directory:', err);
+    });
+
+    if (!files) {
+      console.error('No files found in the directory');
+      return;
+    }
+
+    await Promise.all(
+      files.map(async (file) => {
+        if (file.endsWith('.csv') && file !== 'yearly.csv') {
+          const lines = await fs.promises
+            .readFile(path.join(tmpDir, file), 'utf-8')
+            .then((data) => data.trim().split('\n'))
+            .catch((err) => {
+              console.error('Error reading file:', err);
+            });
+
+          if (!lines) {
+            console.error('No lines found in the file');
+            return;
+          }
+
+          for (const line of lines) {
+            const [, account, , debit, credit] = line.split(',');
+
+            if (balances.hasOwnProperty(account)) {
+              balances[account] +=
+                parseFloat(String(debit || 0)) -
+                parseFloat(String(credit || 0));
+            }
           }
         }
-      }
-    }
+      }),
+    );
 
     const output: string[] = [];
     output.push('Basic Financial Statement');
@@ -191,7 +258,7 @@ export class ReportsService {
     output.push(
       `Assets = Liabilities + Equity, ${totalAssets.toFixed(2)} = ${(totalLiabilities + totalEquity).toFixed(2)}`,
     );
-    await fs.writeFile(outputFile, output.join('\n'));
+    fs.writeFileSync(outputFile, output.join('\n'));
     this.states.fs = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 }
