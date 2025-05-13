@@ -5,7 +5,7 @@ import {
   TicketCategory,
   TicketStatus,
   TicketType,
-} from '../../db/models/Ticket';
+} from '../tickets/ticket.model';
 import { User, UserRole } from '../../db/models/User';
 import { DbModule } from '../db.module';
 import { TicketsController } from './tickets.controller';

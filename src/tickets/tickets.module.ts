@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
-import { Ticket } from '../../db/models/Ticket';
+import { Ticket } from './ticket.model';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 

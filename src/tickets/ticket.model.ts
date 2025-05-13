@@ -7,8 +7,8 @@ import {
   PrimaryKey,
   AutoIncrement,
 } from 'sequelize-typescript';
-import { Company } from './Company';
-import { User } from './User';
+import { Company } from '../../db/models/Company';
+import { User } from '../../db/models/User';
 
 export enum TicketStatus {
   open = 'open',

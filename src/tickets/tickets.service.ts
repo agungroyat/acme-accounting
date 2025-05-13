@@ -12,7 +12,7 @@ import {
   TicketCategory,
   TicketStatus,
   TicketType,
-} from '../../db/models/Ticket';
+} from './ticket.model';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketInterface } from './interfaces/ticket.interface';
 
@@ -25,87 +25,8 @@ export class TicketsService {
 
   async create(createTicketDto: CreateTicketDto): Promise<TicketInterface> {
     const { type, companyId } = createTicketDto;
-
     const category = this.getTicketCategory(type);
-
-    const userRole =
-      type === TicketType.managementReport
-        ? UserRole.accountant
-        : UserRole.corporateSecretary;
-
-    let assignee: User;
-
-    if (type === TicketType.registrationAddressChange) {
-      const registrationAddressChangeTicket = await this.ticketModel.findOne({
-        where: {
-          companyId,
-          type: TicketType.registrationAddressChange,
-          status: TicketStatus.open,
-        },
-        order: [['createdAt', 'DESC']],
-      });
-
-      if (registrationAddressChangeTicket) {
-        throw new ConflictException(
-          `Cannot create a ticket for company ${companyId} because there is already an open ticket for registration address change`,
-        );
-      }
-
-      const corporateSecretaries = await User.findAll({
-        where: { companyId, role: UserRole.corporateSecretary },
-      });
-
-      if (corporateSecretaries.length === 0) {
-        const directors = await User.findAll({
-          where: { companyId, role: UserRole.director },
-        });
-
-        if (directors.length > 1) {
-          throw new ConflictException(
-            `Cannot create a registration address change ticket for company ${companyId} because there are multiple directors`,
-          );
-        }
-
-        assignee = directors[0];
-      } else {
-        if (corporateSecretaries.length > 1) {
-          throw new ConflictException(
-            `Cannot create a registration address change ticket for company ${companyId} because there are multiple corporate secretaries`,
-          );
-        }
-
-        assignee = corporateSecretaries[0];
-      }
-    } else if (type === TicketType.strikeOff) {
-      const directors = await User.findAll({
-        where: { companyId, role: UserRole.director },
-      });
-
-      if (directors.length > 1) {
-        throw new ConflictException(
-          `Cannot create a strike off ticket for company ${companyId} because there are multiple directors`,
-        );
-      }
-
-      assignee = directors[0];
-    } else {
-      const assignees = await User.findAll({
-        where: { companyId, role: userRole },
-        order: [['createdAt', 'DESC']],
-      });
-
-      if (!assignees.length)
-        throw new ConflictException(
-          `Cannot find user with role ${userRole} to create a ticket`,
-        );
-
-      if (userRole === UserRole.corporateSecretary && assignees.length > 1)
-        throw new ConflictException(
-          `Multiple users with role ${userRole}. Cannot create a ticket`,
-        );
-
-      assignee = assignees[0];
-    }
+    const assignee = await this.getAssigneeForTicket(type, companyId);
 
     const ticket = await this.ticketModel.create({
       companyId,
@@ -116,14 +37,7 @@ export class TicketsService {
     });
 
     if (ticket.type === TicketType.strikeOff) {
-      await this.ticketModel.update(
-        { status: TicketStatus.resolved },
-        {
-          where: {
-            id: { [Op.ne]: ticket.id },
-          },
-        },
-      );
+      await this.resolveOtherTickets(ticket.id);
     }
 
     const ticketDto: TicketInterface = {
@@ -142,7 +56,7 @@ export class TicketsService {
     return this.ticketModel.findAll({ include: [Company, User] });
   }
 
-  getTicketCategory(type: TicketType): TicketCategory {
+  private getTicketCategory(type: TicketType): TicketCategory {
     const categories = {
       [TicketType.managementReport]: TicketCategory.accounting,
       [TicketType.registrationAddressChange]: TicketCategory.corporate,
@@ -158,5 +72,140 @@ export class TicketsService {
     }
 
     return categories[type];
+  }
+
+  private async getAssigneeForTicket(
+    type: TicketType,
+    companyId: number,
+  ): Promise<User> {
+    if (type === TicketType.managementReport) {
+      return this.getAccountantAssignee(companyId);
+    }
+
+    if (type === TicketType.registrationAddressChange) {
+      await this.validateExistingTickets(
+        TicketType.registrationAddressChange,
+        companyId,
+      );
+      return this.getCorporateSecretaryAssignee(companyId);
+    }
+
+    return this.getDirectorAssignee(type, companyId);
+  }
+
+  private async validateExistingTickets(
+    type: TicketType,
+    companyId: number,
+  ): Promise<void> {
+    const existingTickets = await this.ticketModel.findAll({
+      where: {
+        companyId,
+        type,
+        status: TicketStatus.open,
+      },
+    });
+
+    if (existingTickets.length > 0) {
+      throw new ConflictException(
+        `Cannot create a ticket for company ${companyId} because there is already an open ticket of type ${type}`,
+      );
+    }
+  }
+
+  private async getCorporateSecretaryAssignee(
+    companyId: number,
+  ): Promise<User> {
+    const corporateSecretaries = await User.findAll({
+      where: { companyId, role: UserRole.corporateSecretary },
+    });
+
+    const hasNoCorporateSecretaries = corporateSecretaries.length === 0;
+    const hasMultipleCorporateSecretaries = corporateSecretaries.length > 1;
+
+    if (hasNoCorporateSecretaries) {
+      return this.getDirectorAssignee(
+        TicketType.registrationAddressChange,
+        companyId,
+      );
+    }
+
+    if (hasMultipleCorporateSecretaries) {
+      throw new BadRequestException(
+        `Cannot create a registration address change ticket for company ${companyId} because there are multiple corporate secretaries`,
+      );
+    }
+
+    return corporateSecretaries[0];
+  }
+
+  private async getDirectorAssignee(
+    type: TicketType,
+    companyId: number,
+  ): Promise<User> {
+    const directors = await User.findAll({
+      where: { companyId, role: UserRole.director },
+    });
+
+    const ticketTypeLabel = this.getTicketTypeLabel(type);
+
+    if (directors.length > 1) {
+      throw new BadRequestException(
+        `Cannot create a ${ticketTypeLabel} ticket for company ${companyId} because there are multiple directors`,
+      );
+    }
+
+    if (directors.length === 0) {
+      throw new BadRequestException(
+        `Cannot create a ${ticketTypeLabel} ticket for company ${companyId} because there are no directors`,
+      );
+    }
+
+    return directors[0];
+  }
+
+  private getTicketTypeLabel(type: TicketType): string {
+    const labels = {
+      [TicketType.managementReport]: 'management report',
+      [TicketType.registrationAddressChange]: 'registration address change',
+      [TicketType.strikeOff]: 'strike off',
+    };
+
+    if (!labels[type]) {
+      throw new BadRequestException(
+        `Ticket type ${type} is not valid. Valid types are: ${Object.keys(
+          labels,
+        ).join(', ')}`,
+      );
+    }
+
+    return labels[type];
+  }
+
+  private async getAccountantAssignee(companyId: number): Promise<User> {
+    const accountants = await User.findAll({
+      where: { companyId, role: UserRole.accountant },
+      order: [['createdAt', 'DESC']],
+    });
+
+    const hasNoAccountants = accountants.length === 0;
+
+    if (hasNoAccountants) {
+      throw new BadRequestException(
+        `Cannot create a management report ticket for company ${companyId} because there are no accountants`,
+      );
+    }
+
+    return accountants[0];
+  }
+
+  private async resolveOtherTickets(ticketId: number): Promise<void> {
+    await this.ticketModel.update(
+      { status: TicketStatus.resolved },
+      {
+        where: {
+          id: { [Op.ne]: ticketId },
+        },
+      },
+    );
   }
 }

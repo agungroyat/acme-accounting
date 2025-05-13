@@ -1,8 +1,4 @@
-import {
-  TicketCategory,
-  TicketStatus,
-  TicketType,
-} from '../../../db/models/Ticket';
+import { TicketCategory, TicketStatus, TicketType } from '../ticket.model';
 
 export interface TicketInterface {
   id: number;
